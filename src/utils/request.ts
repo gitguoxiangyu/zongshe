@@ -12,6 +12,7 @@ interface IResponse<T = any> {
   message: string;
   data: T;
 }
+
 class HttpClient {
   private readonly instance: AxiosInstance;
   constructor(baseURL?: string) {
@@ -19,6 +20,18 @@ class HttpClient {
     this.instance.interceptors.response.use(
       this.handleSuccessResponse,
       this.handleErrorResponse
+    );
+    this.instance.interceptors.request.use(
+      (config) => {
+        // 每次发送请求之前判断是否存在token，如果存在，则统一在http请求的header都加上token，不用每次请求都手动添加了
+        // 即使本地存在token，也有可能token是过期的，所以在响应拦截器中要对返回状态进行判断
+        const token: string | null = window.localStorage["token"];
+        token && (config.headers.Authorization = token);
+        return config;
+      },
+      (error) => {
+        return Promise.reject(error);
+      }
     );
   }
   private handleSuccessResponse(response: AxiosResponse): AxiosResponse {
@@ -50,6 +63,7 @@ class HttpClient {
   }
 }
 
-const http = new HttpClient();
+// const http = new HttpClient('/api');
+const http = new HttpClient("http://116.63.167.175:8001");
 
 export default http;

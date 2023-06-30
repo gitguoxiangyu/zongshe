@@ -19,7 +19,7 @@ const AccountCenter: React.FC = () => {
           />
         </Col>
         <Col>
-          <Typography.Title level={3}>react-template-admin</Typography.Title>
+          <Typography.Title level={3}>权限管理系统</Typography.Title>
         </Col>
         <Col>海纳百川，有容乃大</Col>
       </Row>

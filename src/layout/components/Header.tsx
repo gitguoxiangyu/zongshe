@@ -9,7 +9,7 @@ const HeaderComp: React.FC = () => {
     <Row justify="space-between" align="middle">
       <Col>
         <Text strong style={{ fontSize: 18 }}>
-          react-template-admin
+          权限管理系统
         </Text>
       </Col>
       <Col style={{ display: "flex" }}>

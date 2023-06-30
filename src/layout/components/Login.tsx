@@ -1,22 +1,23 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
-  AlipayOutlined,
+  WechatOutlined,
   LockOutlined,
   MobileOutlined,
-  TaobaoOutlined,
   UserOutlined,
-  WeiboOutlined,
 } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 import {
   LoginFormPage,
   ProFormCaptcha,
   ProFormCheckbox,
+  ProFormInstance,
   ProFormText,
 } from "@ant-design/pro-components";
-import { Button, Divider, message, Space, Tabs } from "antd";
+import { Button, Divider, message, Modal, Space, Tabs } from "antd";
 import type { CSSProperties } from "react";
 import { useLoginStore } from "@stores/index";
+import http from "@utils/request";
+import { getWexinImage } from "@services/login";
 
 type LoginType = "phone" | "account";
 
@@ -27,21 +28,138 @@ const iconStyles: CSSProperties = {
   cursor: "pointer",
 };
 
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 const Login = () => {
   const [loginType, setLoginType] = useState<LoginType>("account");
+  const [codeImg, setCodeImg] = useState<string>("");
   const { setUserInfo } = useLoginStore();
   const navigate = useNavigate();
-  const onFinish = (values: any) => {
-    return delay(1000).then(() => {
-      message.success("登录成功🎉🎉🎉");
-      setUserInfo(values);
-      navigate("/", { replace: true });
+  // 表单实例
+  const formRef = useRef<ProFormInstance>();
+
+  const [uuid, setUuid] = useState<string>("");
+  const [tempKey, setTempKey] = useState<string>("");
+  console.log(666);
+  console.log(uuid);
+
+  // 踩坑：useEffect第一个参数不能是异步函数，如果是，则该函数隐式返回一个 Promise 对象，该对象被 React 框架错误地解释为返回的清理函数。当组件由于导航而卸载时，这会导致错误
+  useEffect(() => {
+    http
+      .request({
+        url: "/captchaImage",
+        method: "get",
+      })
+      .then((res) => {
+        console.log(res);
+        setCodeImg("data:image/gif;base64," + res.data.data.img);
+        // console.log(res.data.data.uuid);
+        setUuid(res.data.data.uuid);
+        console.log(uuid);
+      });
+  }, []); //重点
+
+  const onFinish = async (values: any) => {
+    if (loginType == "phone") {
+      const registerIdentify = {
+        phoneNumber: values.mobile,
+        password: values.password,
+        nickName: values.username,
+        gender: "男",
+        age: "21",
+      };
+      const infoIdentify = {
+        code: values.captcha,
+        tempKey: tempKey,
+      };
+      await http
+        .request({
+          url: "http://116.63.167.175:9520/user/verifyCode",
+          method: "post",
+          data: infoIdentify,
+        })
+        .then((res) => {
+          message.success(res.data.message);
+          if (res.data.code != 200) {
+            return Promise.reject();
+          }
+        });
+      await http
+        .request({
+          url: "http://116.63.167.175:9520/user/register",
+          method: "post",
+          data: registerIdentify,
+        })
+        .then((res) => {
+          console.log(res);
+          message.success(res.data.message);
+        });
+    } else {
+      const loginIdentify = {
+        userName: values.username,
+        password: values.password,
+      };
+      const codeIdentify = {
+        uuid: uuid,
+        codeOfUser: values.code,
+      };
+
+      const login = http.request({
+        url: "/user/login",
+        method: "post",
+        data: loginIdentify,
+      });
+      const identifyCode = http.request({
+        url: "/captchaImage",
+        method: "post",
+        data: codeIdentify,
+      });
+
+      Promise.all([login, identifyCode]).then((res) => {
+        console.log(res);
+        if (res[0].data.code != 200 && res[1].data.code == 200) {
+          message.success("登录成功🎉🎉🎉");
+          setUserInfo(values);
+          navigate("/", { replace: true });
+        }
+      });
+    }
+  };
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [wexinImg, setWexinImg] = useState("");
+
+  const showModal = () => {
+    setIsModalOpen(true);
+    getWexinImage().then((res) => {
+      setWexinImg(res.data.data.qrUrl);
+      // askWeixinStatus(res.data.data.tempUserId)
+      console.log("轮询");
+      const timer = setInterval(() => {
+        http
+          .request({
+            url:
+              "http://116.63.167.175:8001/wxUser/isLogin?tempUserId=" +
+              res.data.data.tempUserId,
+            method: "get",
+          })
+          .then((res) => {
+            if (res.data.code == 200) {
+              setUserInfo(res.data.data);
+              navigate("/", { replace: true });
+              clearInterval(timer);
+            }
+          });
+      }, 1000);
     });
   };
+
+  const handleOk = () => {
+    setIsModalOpen(false);
+  };
+
+  const handleCancel = () => {
+    setIsModalOpen(false);
+  };
+
   return (
     <div
       style={{
@@ -49,11 +167,20 @@ const Login = () => {
         height: "100vh",
       }}
     >
+      <Modal
+        title="Basic Modal"
+        open={isModalOpen}
+        onOk={handleOk}
+        onCancel={handleCancel}
+      >
+        <img src={wexinImg} alt="微信登录" />
+      </Modal>
       <LoginFormPage
         backgroundImageUrl="https://gw.alipayobjects.com/zos/rmsportal/FfdJeJRQWjEeGTpqgBKj.png"
         onFinish={onFinish as any}
-        title="react-template-admin"
-        subTitle="一个轻量级react后台管理系统"
+        formRef={formRef}
+        title="权限管理系统"
+        subTitle="一个可复用的用户权限管理系统"
         activityConfig={{
           style: {
             boxShadow: "0px 0px 8px rgba(0, 0, 0, 0.2)",
@@ -61,8 +188,8 @@ const Login = () => {
             borderRadius: 8,
             backgroundColor: "#1677FF",
           },
-          title: "活动标题，可配置图片",
-          subTitle: "活动介绍说明文字",
+          title: "管理系统",
+          subTitle: "",
           action: (
             <Button
               size="large"
@@ -106,35 +233,10 @@ const Login = () => {
                   borderRadius: "50%",
                 }}
               >
-                <AlipayOutlined style={{ ...iconStyles, color: "#1677FF" }} />
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "center",
-                  alignItems: "center",
-                  flexDirection: "column",
-                  height: 40,
-                  width: 40,
-                  border: "1px solid #D4D8DD",
-                  borderRadius: "50%",
-                }}
-              >
-                <TaobaoOutlined style={{ ...iconStyles, color: "#FF6A10" }} />
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "center",
-                  alignItems: "center",
-                  flexDirection: "column",
-                  height: 40,
-                  width: 40,
-                  border: "1px solid #D4D8DD",
-                  borderRadius: "50%",
-                }}
-              >
-                <WeiboOutlined style={{ ...iconStyles, color: "#333333" }} />
+                <WechatOutlined
+                  style={{ ...iconStyles, color: "green" }}
+                  onClick={showModal}
+                />
               </div>
             </Space>
           </div>
@@ -146,7 +248,7 @@ const Login = () => {
           onChange={(activeKey) => setLoginType(activeKey as LoginType)}
         >
           <Tabs.TabPane key={"account"} tab={"账号密码登录"} />
-          <Tabs.TabPane key={"phone"} tab={"手机号登录"} />
+          <Tabs.TabPane key={"phone"} tab={"手机号注册"} />
         </Tabs>
         {loginType === "account" && (
           <>
@@ -178,6 +280,21 @@ const Login = () => {
                 },
               ]}
             />
+            <ProFormText
+              name="code"
+              fieldProps={{
+                size: "small",
+                prefix: <UserOutlined className={"prefixIcon"} />,
+              }}
+              placeholder={"验证码"}
+              rules={[
+                {
+                  required: true,
+                  message: "请输入验证码!",
+                },
+              ]}
+            />
+            <img src={codeImg} alt="验证码" />
           </>
         )}
         {loginType === "phone" && (
@@ -197,6 +314,34 @@ const Login = () => {
                 {
                   pattern: /^1\d{10}$/,
                   message: "手机号格式错误！",
+                },
+              ]}
+            />
+            <ProFormText
+              name="username"
+              fieldProps={{
+                size: "large",
+                prefix: <UserOutlined className={"prefixIcon"} />,
+              }}
+              placeholder={"用户名: admin or user"}
+              rules={[
+                {
+                  required: true,
+                  message: "请输入用户名!",
+                },
+              ]}
+            />
+            <ProFormText.Password
+              name="password"
+              fieldProps={{
+                size: "large",
+                prefix: <LockOutlined className={"prefixIcon"} />,
+              }}
+              placeholder={"密码: 123456"}
+              rules={[
+                {
+                  required: true,
+                  message: "请输入密码！",
                 },
               ]}
             />
@@ -223,7 +368,19 @@ const Login = () => {
                 },
               ]}
               onGetCaptcha={async () => {
-                message.success("获取验证码成功！验证码为：1234");
+                // message.success("获取验证码成功！验证码为：1234");
+                const phoneNumber = formRef?.current?.getFieldValue("mobile");
+                http
+                  .request({
+                    url: "http://116.63.167.175:9520/user/sendCode",
+                    method: "post",
+                    data: {
+                      phoneNumber,
+                    },
+                  })
+                  .then((res) => {
+                    setTempKey(res.data.data);
+                  });
               }}
             />
           </>
